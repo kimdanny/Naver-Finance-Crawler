@@ -20,7 +20,7 @@ class Naver_Crawler:
         # self.filename = os.path.join(dirname, self.company_code+".csv")
 
     def crawl_news(self, maxpage, page_to_csv=True, full_pages_to_csv=True):
-        page = 10
+        page = 1
         assert type(maxpage) == int
 
         result_df = None
@@ -141,7 +141,14 @@ class Naver_Crawler:
     def crawl_research(self, maxpage, page_to_csv=True, full_pages_to_csv=True):
         # TODO: 아래는 종목별 리서치 parameterised url
         # https://finance.naver.com/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=105560
-        pass
+        page = 1
+        assert type(maxpage) == int
+
+        result_df = None
+
+        while page <= maxpage:
+            url = 'https://finance.naver.com/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=' \
+                            + self.company_code + '&page=' + str(page)
 
 
 if __name__ == '__main__':
