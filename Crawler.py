@@ -164,7 +164,7 @@ class Naver_Crawler:
             html = html.select('.box_type_m')
             html = html[0].find_all('tr')   # tr list
 
-            stock, title, link, body, source, date = [], [], [], [], [], []
+            stock, title, link, body, goal_price, opinion, source, date, views = [], [], [], [], [], [], [], [], []
 
             for tr in iter(html[2:-3]):
                 td_list = tr.find_all('td')
@@ -172,16 +172,29 @@ class Naver_Crawler:
                     # get info
                     stock.append(td_list[0].find('a')['title'])
                     title.append(td_list[1].find('a').text)
-                    link.append(self.base_url + "/research/" +td_list[1].find('a')['href'])
-                    # TODO: get body from link
+                    research_url = self.base_url + "/research/" + td_list[1].find('a')['href']
+                    link.append(research_url)
+
+                    # surf into link and get goal_price, opinion and body
+                    article_html = BeautifulSoup(requests.get(research_url).text, 'html.parser')
+
+                    goalNopinion = article_html.select('.view_info_1')  # div
+                    goal_price.append(int(goalNopinion[0].find_all('em')[0].text[:-1]))
+                    opinion.append(goalNopinion[0].find_all('em')[1].text)
+
+                    body.append(article_html.find('td', class_='view_cnt').find('div')
+                                                                          .text.replace("\n", "").replace("\t", ""))
+
                     source.append(td_list[2].text)
                     date.append(td_list[4].text)
+                    views.append(td_list[5].text)
 
             # To Dataframe and To CSV (optional)
             page_result = {
                 "Stock": stock, "Title": title,
-                "Link": link, "Source": source, #"Body": body,
-                "Date": date
+                "Link": link, "Source": source,
+                "Body": body, "Goal_Price": goal_price, "Opinion": opinion,
+                "Date": date, "Views": views
             }
 
             page_df = pd.DataFrame(page_result)
