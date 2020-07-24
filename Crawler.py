@@ -3,6 +3,8 @@ import requests
 import re
 import pandas as pd
 import os
+from pathlib import Path
+import numpy as np
 
 
 # TODO: crawl by dates range ex) crawl news from when to when
@@ -16,29 +18,46 @@ class Naver_Crawler:
         assert type(self.company_code) == str
         root_dir = os.path.dirname(__file__)
         base_dir = os.path.join(root_dir, "crawled_result")
-        self.company_dir = os.path.join(base_dir, self.company_code)
-
-        # TODO: Directory and files auto-generation, auto-deletion
+        self.company_dir_path = os.path.join(base_dir, self.company_code)
 
     def crawl_news(self, maxpage, page_to_csv=True, full_pages_to_csv=True):
+        """
+        Example URL:
+            https://finance.naver.com/item/news.nhn?code=095570&page=2&sm=entity_id.basic
+
+        :param maxpage:  (int or None) Crawl to `maxpage`page
+        :param page_to_csv: (Bool)  Set True if you want csv for separate pages, otherwise False
+        :param full_pages_to_csv: (Bool)  Set True if you want all pages' result into one csv, otherwise False
+        :return: (pd.DataFrame) crawled result
+        """
+        # Path Handling
+        news_dir_path = os.path.join(self.company_dir_path, 'News')
+        if full_pages_to_csv:
+            fullPage_dir_path = Path(os.path.join(news_dir_path, 'fullPage'))
+            fullPage_dir_path.mkdir(parents=True, exist_ok=True)
+
         page = 1
+        # Tracking first and last page for file name
+        firstpage = page
+        last_read_page = None
+
         assert type(maxpage) == int
 
         result_df = None
 
         while page <= maxpage:
 
-            # https://finance.naver.com/item/news.nhn?code=095570&page=2&sm=entity_id.basic  ==> 095570 종목 2페이지 기사 sample url
-            url = self.base_url + '/item/news_news.nhn?code=' + self.company_code + '&page=' + str(
-                page) + '&sm=entity_id.basic'
+            url = self.base_url + '/item/news_news.nhn?code=' + self.company_code + '&page=' + str(page)
 
             html_text = requests.get(url).text
             html = BeautifulSoup(html_text, "html.parser")
 
+            # TODO: Try getting the last_page as I did from below
             # Possible future Error Handling: maxpage Error -> Currently handled by Naver themself
             # 실제 웹에는 5페이지까지 밖에 없는데 maxpage를 10으로 설정한 경우 5페이지에서 loop break 시킴
             try:
-                print(f'Current page: {page}')
+                print(f'News Current page: {page}')
+                last_read_page = page
                 current_page_on_html = html.select('.on')[1].text.replace("\n", "").replace("\t", "")
             except IndexError:
                 current_page_on_html = page
@@ -77,16 +96,14 @@ class Naver_Crawler:
                 body = article_html.find('div', id='news_read')
                 body = body.text  # type --> sting
                 body = body.replace("\n", "").replace("\t", "")
-                # print(body)
-                # TODO: body내 특수문자 다 없애기
+                # TODO: body내 특수문자 다 없애기 -> 여기서 안하고 모델에 넣을떄 해도 될듯
                 article_body_result.append(body)
 
                 # 6. TODO: ==Reaction==
                 reaction_space = article_html.find('ul', class_='u_likeit_layer _faceLayer')
-                # print(reaction_space)
+
                 good_reaction_count = int(reaction_space.find('li', class_='u_likeit_list good') \
                                           .find('span', class_='u_likeit_list_count _count').text)
-
 
                 warm_reaction_count = int(reaction_space.find('li', class_='u_likeit_list warm') \
                                           .find('span', class_='u_likeit_list_count _count').text)
@@ -100,13 +117,13 @@ class Naver_Crawler:
                 want_reaction_count = int(reaction_space.find('li', class_='u_likeit_list want') \
                                           .find('span', class_='u_likeit_list_count _count').text)
 
-
-                print(reaction_space)
-                print("="*20)
+                # print(reaction_space)
+                # print("="*20)
 
                 # 7. TODO: ==Commentary==
-                comments = article_html.find_all(lambda tag: tag.name == 'span' and tag.get('class') == 'u_cbox_contents')
-                #print(comments)
+                comments = article_html.find_all(
+                    lambda tag: tag.name == 'span' and tag.get('class') == 'u_cbox_contents')
+                # print(comments)
 
             # To Dataframe and To CSV (optional)
             page_result = {
@@ -128,26 +145,47 @@ class Naver_Crawler:
                 result_df = result_df.append(page_df, ignore_index=True)
 
             if page_to_csv:
-                page_df.to_csv(self.company_code + 'page' + str(page) + '.csv', mode='w',
-                               encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
+                page_df.to_csv(os.path.join(news_dir_path, 'page' + str(page) + '.csv'),
+                               mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
 
             page += 1
 
         if full_pages_to_csv:
-            result_df.to_csv(self.company_code + '.csv', mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
+            result_df.to_csv(
+                os.path.join(fullPage_dir_path, 'pages' + str(firstpage) + '-' + str(last_read_page) + '.csv'),
+                mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
 
         return result_df
 
     # TODO: Research page Crawling.
     def crawl_research(self, maxpage=None, page_to_csv=True, full_pages_to_csv=True):
-        # https://finance.naver.com/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=105560&page=1
+        """
+        Example URL:
+            https://finance.naver.com/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=105560&page=1
+
+        :param maxpage:  (int or None) Crawl to `maxpage`page
+        :param page_to_csv: (Bool)  Set True if you want csv for separate pages, otherwise False
+        :param full_pages_to_csv: (Bool)  Set True if you want all pages' result into one csv, otherwise False
+        :return: (pd.DataFrame) crawled result
+        """
+        # Path Handling
+        research_dir_path = os.path.join(self.company_dir_path, 'Research')
+
+        if full_pages_to_csv:
+            fullPage_dir_path = Path(os.path.join(research_dir_path, 'fullPage'))
+            fullPage_dir_path.mkdir(parents=True, exist_ok=True)
+
         page = 1
+        firstpage = page
+        last_read_page = None
 
         # Get Last page number
         url = self.base_url + '/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=' + self.company_code
         page_nav = BeautifulSoup(requests.get(url).text, 'html.parser').select('.pgRR')[0]
         last_page = page_nav.find('a')['href']
-        last_page = int(last_page[-1:] if "=" in last_page[-2:] else last_page[-2:])
+        match = re.search(r'page=', last_page)
+        last_page = int(last_page[match.end():])
+        del match
 
         maxpage = last_page if maxpage is None else maxpage
 
@@ -157,12 +195,12 @@ class Naver_Crawler:
 
         while page <= maxpage:
             url = self.base_url + '/research/company_list.nhn?keyword=&searchType=itemCode&itemCode=' \
-                            + self.company_code + '&page=' + str(page)
+                  + self.company_code + '&page=' + str(page)
 
             html_text = requests.get(url).text
             html = BeautifulSoup(html_text, "html.parser")
             html = html.select('.box_type_m')
-            html = html[0].find_all('tr')   # tr list
+            html = html[0].find_all('tr')  # tr list
 
             stock, title, link, body, goal_price, opinion, source, date, views = [], [], [], [], [], [], [], [], []
 
@@ -179,11 +217,16 @@ class Naver_Crawler:
                     article_html = BeautifulSoup(requests.get(research_url).text, 'html.parser')
 
                     goalNopinion = article_html.select('.view_info_1')  # div
-                    goal_price.append(int(goalNopinion[0].find_all('em')[0].text[:-1]))
+                    price = goalNopinion[0].find_all('em')[0].text[:-1]
+                    try:
+                        price = int(price)
+                    except ValueError:      # 가끔 어떤 목표가는 N/R 이라고 적혀있다
+                        price = np.nan
+                    goal_price.append(price)
                     opinion.append(goalNopinion[0].find_all('em')[1].text)
 
                     body.append(article_html.find('td', class_='view_cnt').find('div')
-                                                                          .text.replace("\n", "").replace("\t", ""))
+                                .text.replace("\n", "").replace("\t", ""))
 
                     source.append(td_list[2].text)
                     date.append(td_list[4].text)
@@ -206,31 +249,62 @@ class Naver_Crawler:
                 result_df = result_df.append(page_df, ignore_index=True)
 
             if page_to_csv:
-                page_df.to_csv("research" + self.company_code + 'page' + str(page) + '.csv', mode='w',
-                               encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
+                page_df.to_csv(os.path.join(research_dir_path, 'page' + str(page) + '.csv'),
+                               mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
 
+            last_read_page = page
             page += 1
 
         if full_pages_to_csv:
-            result_df.to_csv("research" + self.company_code + '.csv', mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
+            result_df.to_csv(
+                os.path.join(fullPage_dir_path, 'pages' + str(firstpage) + '-' + str(last_read_page) + '.csv'),
+                mode='w', encoding='utf-8-sig')  # 한글 깨짐 방지 인코딩
 
         return result_df
 
-    def crawl_discussion(self, maxpage):
-        # https://finance.naver.com/item/board.nhn?code=005930&page=1
-        pass
+    def crawl_discussion(self, maxpage, page_to_csv=True, full_pages_to_csv=True):
+        """
+        --> Will be deprecated?
+
+        네이버 종목 토론 방
+        Example URL:
+            https://finance.naver.com/item/board.nhn?code=005930&page=1
+            https://finance.naver.com/item/board.nhn?code=005930
+        :param maxpage:
+        :param page_to_csv:
+        :param full_pages_to_csv:
+        :return:
+        """
+        page = 1
+
+        assert type(maxpage) == int
+
+        result_df = None
+
+        while page <= maxpage:
+            url = self.base_url + '/item/board.nhn?code=' + self.company_code + '&page=' + str(page)
+
+            page += 1
+
+        return result_df
+
 
 if __name__ == '__main__':
     # 종목 코드로 기사 크롤링 --> 종목코드는 FinancialDataReader에서 받아온다.
-    # sample code --> {'005930': '삼성전자',
-                    #  '005380': '현대차',
-                    #  '015760': '한국전력',
-                    #  '005490': 'POSCO',
-                    #  '105560': 'KB금융'
-                    #  '95570' : 'AJ네트웍스'}
 
-    naver_crawler = Naver_Crawler('005930')
-    #news_df = naver_crawler.crawl_news(maxpage=2)
+    # sample code --> { '005930': '삼성전자',
+    #                   '005380': '현대차',
+    #                   '015760': '한국전력',
+    #                   '005490': 'POSCO',
+    #                   '105560': 'KB금융'
+    #                   '95570' : 'AJ네트웍스'}
+
+    naver_crawler = Naver_Crawler('005380')
+    # news_df = naver_crawler.crawl_news(maxpage=2)
     # print(sample_df)
-    research = naver_crawler.crawl_research(1)
-    print(research)
+
+    # research = naver_crawler.crawl_research(2)
+    # print(research)
+
+    # discussion = naver_crawler.crawl_discussion(1)
+    # print(discussion)
